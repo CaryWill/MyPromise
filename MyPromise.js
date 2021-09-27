@@ -76,10 +76,12 @@ function resolvePromise(promise, x, resolve, reject) {
     // 如果是 thenable 的话
     try {
       if (typeof x.then === "function") {
-        x.then(
+        x.then.call(
+          x,
           (y) => resolvePromise(promise, y, resolve, reject),
           (r) => reject(r)
         );
+        // TODO: If both resolvePromise and rejectPromise are called 这种情况有可能是 x.then 本身的实现有问题，比如我的 x 长这样 { then((res, rej) => {res();rej();})} 也不是不行啊
       } else {
         resolve(x);
       }
