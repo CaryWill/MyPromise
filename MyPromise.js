@@ -1,7 +1,7 @@
 const State = {
-  PENDING: 0,
-  FULFILLED: 1,
-  REJECTED: 2,
+  PENDING: "PENDING",
+  FULFILLED: "FULFILLED",
+  REJECTED: "REJECTED",
 };
 
 function MyPromise(executor) {
@@ -11,7 +11,7 @@ function MyPromise(executor) {
   this.onFulfilledCallbacks = [];
   this.onRejectedCallbacks = [];
 
-  const resolve = (val = "") => {
+  const resolve = (val) => {
     if (this.state !== State.PENDING) return;
 
     this.state = State.FULFILLED;
@@ -19,15 +19,13 @@ function MyPromise(executor) {
 
     this.onFulfilledCallbacks.forEach((callback) => {
       // 微任务(不过此处实现的方式是宏任务)
-      setTimeout(() => {
-        // 因为 then(res => callback(res)) 所以 callback 的参数是 this.value
-        // 而且每次执行 callback 会改变 this.value 这样可以将上一个 callback 的值传递给下一个
-        callback(this.value);
-      }, 0);
+      // 因为 then(res => callback(res)) 所以 callback 的参数是 this.value
+      // 而且每次执行 callback 会改变 this.value 这样可以将上一个 callback 的值传递给下一个
+      setTimeout(() => callback(this.value), 0);
     });
   };
 
-  const reject = (reason = "") => {
+  const reject = (reason) => {
     if (this.state !== State.PENDING) return;
 
     this.state = State.REJECTED;
@@ -35,9 +33,7 @@ function MyPromise(executor) {
 
     this.onRejectedCallbacks.forEach((callback) => {
       // 微任务(不过此处实现的方式是宏任务)
-      setTimeout(() => {
-        callback(this.reason);
-      }, 0);
+      setTimeout(() => callback(this.reason), 0);
     });
   };
 
@@ -49,65 +45,76 @@ function MyPromise(executor) {
   }
 }
 
+// 用来解析 x 是 promise 的情况，保证 `then` 执行顺序
 function resolvePromise(promise, x, resolve, reject) {
-  // FIXME:规范上这么说，但是什么场景下会相同呢
   if (promise === x) {
-    return reject(new TypeError("promise and value refer to the same object."));
+    return reject(
+      new TypeError("The promise and the return value are the same")
+    );
   }
 
   if (x instanceof MyPromise) {
     x.then(
-      (res) => {
-        if (res instanceof MyPromise) {
-          resolvePromise(promise, res, resolve, reject);
-        } else {
-          resolve(res);
-        }
-      },
-      (error) => {
-        if (error instanceof MyPromise) {
-          resolvePromise(promise, error, resolve, reject);
-        } else {
-          reject(error);
-        }
-      }
+      (y) => resolvePromise(promise, y, resolve, reject),
+      (error) => reject(error)
     );
-  } else if (["object", "function"].includes(typeof x)) {
-    // 如果是 thenable 的话
+  } else if (typeof x === "object" || typeof x === "function") {
+    if (x === null) return resolve(x);
+
+    let then;
     try {
-      if (typeof x.then === "function") {
-        x.then.call(
-          x,
-          (y) => resolvePromise(promise, y, resolve, reject),
-          (r) => reject(r)
-        );
-        // TODO: If both resolvePromise and rejectPromise are called 这种情况有可能是 x.then 本身的实现有问题，比如我的 x 长这样 { then((res, rej) => {res();rej();})} 也不是不行啊
-      } else {
-        resolve(x);
-      }
+      then = x.then;
     } catch (error) {
-      reject(error);
+      return reject(error);
+    }
+
+    // 如果是 thenable 的话
+    // 这种情况有可能是 x.then 本身的实现有问题，比如 x 长这样 { then((res, rej) => {res();rej();})} 就会调用多次
+    let called = false;
+    if (typeof then === "function") {
+      try {
+        // 正如官网说的，这一点要注意 accessor property，所以推荐使用 then.call 而不是 x.then
+        then.call(
+          x,
+          (y) => {
+            if (called) return;
+            called = true;
+            resolvePromise(promise, y, resolve, reject);
+          },
+          (r) => {
+            if (called) return;
+            called = true;
+            reject(r);
+          }
+        );
+      } catch (error) {
+        if (called) return;
+        reject(error);
+      }
+    } else {
+      resolve(x);
     }
   } else {
     resolve(x);
   }
 }
 
-MyPromise.prototype.then = function then(
-  onFulfilled = (v) => v,
-  onRejected = (v) => v
-) {
+MyPromise.prototype.then = function then(onFulfilled, onRejected) {
+  onFulfilled = typeof onFulfilled === "function" ? onFulfilled : (v) => v;
+  onRejected =
+    typeof onRejected === "function"
+      ? onRejected
+      : (r) => {
+          throw r;
+        };
+
   if (this.state === State.FULFILLED) {
     const promise = new MyPromise((resolve, reject) => {
       // 因为 fulfilled 了，所以直接加入到微任务中即可
       setTimeout(() => {
         try {
           const _value = onFulfilled(this.value);
-          if (_value instanceof MyPromise) {
-            resolvePromise(promise, _value, resolve, reject);
-          } else {
-            resolve(_value);
-          }
+          resolvePromise(promise, _value, resolve, reject);
         } catch (error) {
           reject(error);
         }
@@ -122,11 +129,7 @@ MyPromise.prototype.then = function then(
       setTimeout(() => {
         try {
           const _value = onRejected(this.reason);
-          if (_value instanceof MyPromise) {
-            resolvePromise(promise, _value, resolve, reject);
-          } else {
-            reject(_value);
-          }
+          resolvePromise(promise, _value, resolve, reject);
         } catch (error) {
           reject(error);
         }
@@ -142,11 +145,7 @@ MyPromise.prototype.then = function then(
       this.onFulfilledCallbacks.push((value) => {
         try {
           const _value = onFulfilled(value);
-          if (_value instanceof MyPromise) {
-            resolvePromise(promise, _value, resolve, reject);
-          } else {
-            resolve(_value);
-          }
+          resolvePromise(promise, _value, resolve, reject);
         } catch (error) {
           reject(error);
         }
@@ -154,12 +153,8 @@ MyPromise.prototype.then = function then(
 
       this.onRejectedCallbacks.push((reason) => {
         try {
-          const _value = onFulfilled(reason);
-          if (_value instanceof MyPromise) {
-            resolvePromise(promise, _value, resolve, reject);
-          } else {
-            resolve(_value);
-          }
+          const _value = onRejected(reason);
+          resolvePromise(promise, _value, resolve, reject);
         } catch (error) {
           reject(error);
         }
@@ -182,5 +177,11 @@ MyPromise.deferred = function () {
 
 MyPromise.resolve = (value) => new MyPromise((resolve, _) => resolve(value));
 MyPromise.reject = (reason) => new MyPromise((_, reject) => reject(reason));
+
+MyPromise.reject = function (reason) {
+  return new MyPromise(function (resolve, reject) {
+    reject(reason);
+  });
+};
 
 module.exports = MyPromise;
