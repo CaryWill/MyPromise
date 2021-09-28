@@ -11,8 +11,8 @@ function MyPromise(executor) {
   this.onFulfilledCallbacks = [];
   this.onRejectedCallbacks = [];
 
-  const resolve = (val) => {
-    if (!this.state === State.PENDING) return;
+  const resolve = (val = "") => {
+    if (this.state !== State.PENDING) return;
 
     this.state = State.FULFILLED;
     this.value = val;
@@ -27,10 +27,10 @@ function MyPromise(executor) {
     });
   };
 
-  const reject = (reason) => {
-    if (!this.state === State.PENDING) return;
+  const reject = (reason = "") => {
+    if (this.state !== State.PENDING) return;
 
-    this.state = State.FULFILLED;
+    this.state = State.REJECTED;
     this.reason = reason;
 
     this.onRejectedCallbacks.forEach((callback) => {
@@ -66,7 +66,7 @@ function resolvePromise(promise, x, resolve, reject) {
       },
       (error) => {
         if (error instanceof MyPromise) {
-          resolvePromise(promise, res, resolve, reject);
+          resolvePromise(promise, error, resolve, reject);
         } else {
           reject(error);
         }
@@ -118,14 +118,14 @@ MyPromise.prototype.then = function then(
 
   if (this.state === State.REJECTED) {
     const promise = new MyPromise((resolve, reject) => {
-      // 因为 fulfilled 了，所以直接加入到微任务中即可
+      // 因为 rejected 了，所以直接加入到微任务中即可
       setTimeout(() => {
         try {
-          const _value = onRejected(this.value);
+          const _value = onRejected(this.reason);
           if (_value instanceof MyPromise) {
             resolvePromise(promise, _value, resolve, reject);
           } else {
-            resolve(_value);
+            reject(_value);
           }
         } catch (error) {
           reject(error);
@@ -179,5 +179,8 @@ MyPromise.deferred = function () {
 
   return result;
 };
+
+MyPromise.resolve = (value) => new MyPromise((resolve, _) => resolve(value));
+MyPromise.reject = (reason) => new MyPromise((_, reject) => reject(reason));
 
 module.exports = MyPromise;
