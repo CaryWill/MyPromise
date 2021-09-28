@@ -19,9 +19,7 @@ function MyPromise(executor) {
 
     this.onFulfilledCallbacks.forEach((callback) => {
       // 微任务(不过此处实现的方式是宏任务)
-      // 因为 then(res => callback(res)) 所以 callback 的参数是 this.value
-      // 而且每次执行 callback 会改变 this.value 这样可以将上一个 callback 的值传递给下一个
-      setTimeout(() => callback(this.value), 0);
+      setTimeout(callback, 0);
     });
   };
 
@@ -33,11 +31,11 @@ function MyPromise(executor) {
 
     this.onRejectedCallbacks.forEach((callback) => {
       // 微任务(不过此处实现的方式是宏任务)
-      setTimeout(() => callback(this.reason), 0);
+      setTimeout(callback, 0);
     });
   };
 
-  // executor 入参乱写导致报错
+  // executor 入参乱写导致报错等
   try {
     executor(resolve, reject);
   } catch (error) {
@@ -56,7 +54,7 @@ function resolvePromise(promise, x, resolve, reject) {
   if (x instanceof MyPromise) {
     x.then(
       (y) => resolvePromise(promise, y, resolve, reject),
-      (error) => reject(error)
+      (r) => reject(r)
     );
   } else if (typeof x === "object" || typeof x === "function") {
     if (x === null) return resolve(x);
@@ -128,8 +126,8 @@ MyPromise.prototype.then = function then(onFulfilled, onRejected) {
       // 因为 rejected 了，所以直接加入到微任务中即可
       setTimeout(() => {
         try {
-          const _value = onRejected(this.reason);
-          resolvePromise(promise, _value, resolve, reject);
+          const _reason = onRejected(this.reason);
+          resolvePromise(promise, _reason, resolve, reject);
         } catch (error) {
           reject(error);
         }
@@ -142,19 +140,19 @@ MyPromise.prototype.then = function then(onFulfilled, onRejected) {
     const promise = new MyPromise((resolve, reject) => {
       // 包一层然后加入到 callback list 中等待 this 被 settle
       // 包一层是因为有可能 onFulfilled() 返回 promise
-      this.onFulfilledCallbacks.push((value) => {
+      this.onFulfilledCallbacks.push(() => {
         try {
-          const _value = onFulfilled(value);
+          const _value = onFulfilled(this.value);
           resolvePromise(promise, _value, resolve, reject);
         } catch (error) {
           reject(error);
         }
       });
 
-      this.onRejectedCallbacks.push((reason) => {
+      this.onRejectedCallbacks.push(() => {
         try {
-          const _value = onRejected(reason);
-          resolvePromise(promise, _value, resolve, reject);
+          const _reason = onRejected(this.reason);
+          resolvePromise(promise, _reason, resolve, reject);
         } catch (error) {
           reject(error);
         }
