@@ -176,10 +176,4 @@ MyPromise.deferred = function () {
 MyPromise.resolve = (value) => new MyPromise((resolve, _) => resolve(value));
 MyPromise.reject = (reason) => new MyPromise((_, reject) => reject(reason));
 
-MyPromise.reject = function (reason) {
-  return new MyPromise(function (resolve, reject) {
-    reject(reason);
-  });
-};
-
 module.exports = MyPromise;
